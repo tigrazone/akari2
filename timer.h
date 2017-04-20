@@ -1,34 +1,27 @@
 #ifndef _TIMER_H_
 #define _TIMER_H_
 
+#include <time.h>
 
 namespace hstd {
-	
-#ifdef _WIN32
-
-#define NOMINMAX
-#include <Windows.h>
 
 class Timer {
 private:
-	LARGE_INTEGER nFreq_, nBefore_, nAfter_;
+	clock_t nBefore_, nAfter_;
 public:
 	Timer() {}
 
 	void begin() {
-		QueryPerformanceFrequency(&nFreq_);
-		QueryPerformanceCounter(&nBefore_);
+		nBefore_ = clock();
 	}
 
 	// ms
 	float end() {
-		QueryPerformanceCounter(&nAfter_);
+		nAfter_ = clock();
 
-		return ((nAfter_.QuadPart - nBefore_.QuadPart) * 1000.0f / nFreq_.QuadPart);
+		return nAfter_ - nBefore_;
 	}
 };
-
-#endif
 
 } // namespace hstd
 

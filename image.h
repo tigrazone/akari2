@@ -4,6 +4,9 @@
 #include <memory>
 #include <algorithm>
 #include <vector>
+
+#include <string.h>
+
 #include "vec3.h"
 
 
@@ -100,7 +103,7 @@ public:
 		const int BufSize = 4096;
 		char buf[BufSize];
 		if (fp == NULL) {
-			std::cerr << "HDR Error: " << filename << std::endl;
+			printf("HDR Error: %s\n", filename);
 			return false;
 		}
 
@@ -112,6 +115,8 @@ public:
 
 		type = NONE;
 		float exposure = 1.0;
+		
+		long ii;
 
 		// ヘッダ読み込み
 		for (;;) {
@@ -137,7 +142,7 @@ public:
 		}
 
 		if (!valid) {
-			std::cerr << "Invalid HDR File: " << filename << std::endl;
+			printf("Invalid HDR File: %s\n", filename);
 			return false;
 		}
 
@@ -149,7 +154,7 @@ public:
 
 		// -Y @ +X @ しかあつかわないことにする　
 		if (strcmp(buf2, "-Y") != 0 && strcmp(buf3, "+X") != 0) {
-			std::cerr << "Invalid HDR File: " << filename << " " << buf2 << " " << buf3 << std::endl;
+			printf("Invalid HDR File: %s %s %s\n", filename, buf2, buf3);
 			return false;
 		}
 
@@ -166,12 +171,14 @@ public:
 
 		const size_t ret_size = fread(&buffer[0], sizeof(unsigned char), rest_size, fp.get());
 		if (ret_size < rest_size) {
-			std::cerr << "Error: fread" << std::endl;
+			printf("Error: fread\n");
 			return false;
 		}
 		
 		int index = 0;
 		int nowy = 0;
+		int iw = width *4;
+		ii=0;
 		for (;index < rest_size;) {
 			const int now = buffer[index++];
 			if (now == EOF)
@@ -188,10 +195,12 @@ public:
 
 			int nowx = 0;
 			int nowvalue = 0;
+			int nnxx=0;
 			for (;;) {
 				if (nowx >= width) {
 					nowvalue ++;
 					nowx = 0;
+					nnxx=0;
 					if (nowvalue == 4)
 						break;
 				}
@@ -200,31 +209,41 @@ public:
 				if (info <= 128) {
 					for (int i = 0; i < info; ++i) {
 						const int data = buffer[index++];
-						tmp_data[(nowy * width + nowx) * 4 + nowvalue] = data;
+						//tmp_data[(nowy * width + nowx) * 4 + nowvalue] = data;
+						tmp_data[ii + nnxx + nowvalue] = data;
 						nowx ++;
+						nnxx+=4;
 					}
 				} else {
 					const int num = info - 128;
 					const int data = buffer[index++];
 					for (int i = 0; i < num; ++i) {
-						tmp_data[(nowy * width + nowx) * 4 + nowvalue] = data;
+						tmp_data[ii + nnxx + nowvalue] = data;
 						nowx ++;
+						nnxx+=4;
 					}
 				}
 			}
 
 			nowy ++;
+			ii += iw;
 		}
 
 		image->resize(width, height);
+		
+		float ep;
 
+		ii=0;
 		// 展開
 		for (int y = 0; y < height; ++y) {
 			for (int x = 0; x < width; ++x) {
-				const int e = tmp_data[(y * width + x) * 4 + 3];
-				image->at(x, y).x = tmp_data[(y * width + x) * 4 + 0] * pow(2, e - 128.0f) / 256.0f;
-				image->at(x, y).y = tmp_data[(y * width + x) * 4 + 1] * pow(2, e - 128.0f) / 256.0f;
-				image->at(x, y).z = tmp_data[(y * width + x) * 4 + 2] * pow(2, e - 128.0f) / 256.0f;
+				const int e = tmp_data[ii + 3];
+				ep=pow(2, e - 128.0f) / 256.0f;
+				image->at(x, y).x = tmp_data[ii] * ep;
+				image->at(x, y).y = tmp_data[ii + 1] * ep;
+				image->at(x, y).z = tmp_data[ii + 2] * ep;
+				
+				ii+=4;
 			}
 		}
 
@@ -235,7 +254,7 @@ public:
 		std::shared_ptr<FILE> fp(fopen(filename, "wb"), [](FILE *f){ if (f != NULL) fclose(f); });
 
 		if (fp == NULL) {
-			std::cerr << "Error: " << filename << std::endl;
+			printf("Error: %s\n", filename);
 			return;
 		}
 		// .hdrフォーマットに従ってデータを書きだす

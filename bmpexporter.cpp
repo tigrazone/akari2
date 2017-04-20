@@ -3,7 +3,9 @@
 #include <string.h>
 #include "bmpexporter.h"
 
-#pragma pack(push,2)
+#ifdef BMP_SAVER
+
+ #pragma pack(push,2)
 
 typedef struct tagBITMAPFILEHEADER {
   unsigned short bfType;
@@ -27,7 +29,7 @@ typedef struct tagBITMAPINFOHEADER{
 	unsigned long  biClrImporant;
 } BITMAPINFOHEADER;
 
-#pragma pack(pop)
+ #pragma pack(pop)
 
 int exportToBmp(
 	const char* fileName, 
@@ -53,8 +55,10 @@ int exportToBmp(
 	totalFileLength = sizeof(BITMAPFILEHEADER)+sizeof(BITMAPINFOHEADER)+scanLineLengthInBytes*height;
 	// メモリを確保
 	bmpMemoryStart = (unsigned char*)malloc(totalFileLength);
+	
 	if( !bmpMemoryStart )
 	{ goto EXIT; }
+
 	bmpMemoryCursor = bmpMemoryStart;
 	// BITMAPFILEHEADERを作成
 	header = (BITMAPFILEHEADER*)bmpMemoryCursor; //
@@ -92,7 +96,16 @@ int exportToBmp(
 		bmpMemoryCursor += scanLineLengthInBytes;
 	}
 	// ファイルに書き込む
+	
+	#if defined(__GNUC__)
+	file=fopen(fileName,"wb");
+#elif defined(__MSVC__)
 	fopen_s(&file,fileName,"wb");
+#else
+#error Unsupported compiler!
+#endif
+
+	
 	if(!file)
 	{ goto EXIT; }
 	if(fwrite(bmpMemoryStart,totalFileLength,1,file)!=1)
@@ -112,3 +125,4 @@ EXIT:
 	}
 	return success;
 }
+#endif

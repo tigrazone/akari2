@@ -3,8 +3,12 @@
 
 #include <algorithm>
 #include <cmath>
-#include <iostream>
+
+//#include <iostream>
+
+#ifdef _DEBUG
 #include <assert.h>
+#endif
 
 namespace hstd {
 
@@ -66,7 +70,8 @@ struct Vec3 {
 		return Vec3(x * b, y * b, z * b);
 	}
 	inline Vec3 operator/(const T b) const {
-		return Vec3(x / b, y / b, z / b);
+		const T b1=1/b;
+		return Vec3(x * b1, y * b1, z * b1);
 	}
 	inline const float lengthSquared() const { 
 		return x*x + y*y + z*z; 
@@ -101,6 +106,12 @@ inline const T dot(const Vec3<T> &v1, const Vec3<T> &v2) {
 }
 
 template <typename T>
+inline const T dot2(const Vec3<T> &v1, const Vec3<T> &v2) {
+	const T ttt = v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
+	return ttt+ttt;
+}
+
+template <typename T>
 inline const Vec3<T> cross(const Vec3<T> &v1, const Vec3<T> &v2) {
 	return Vec3<T>(
 		(v1.y * v2.z) - (v1.z * v2.y),
@@ -108,19 +119,51 @@ inline const Vec3<T> cross(const Vec3<T> &v1, const Vec3<T> &v2) {
 		(v1.x * v2.y) - (v1.y * v2.x));
 }
 
+/*
 template <typename T>
 std::ostream &operator<<(std::ostream &out, const Vec3<T> &v) {
 	out << "<" << v.x << "," << v.y << "," << v.z << ">";
 	return out;
 }
+*/
 
+//optimise more!
 template <typename T>
 inline void createOrthoNormalBasis(const Vec3<T> &normal, Vec3<T> *tangent, Vec3<T> *binormal) {
 	if (abs(normal.x) > abs(normal.y))
-		*tangent = normalize(cross(Vec3<T>(0, 1, 0), normal));
+		//*tangent = normalize(cross(Vec3<T>(0, 1, 0), normal));
+		//tigra
+		{
+			const T nn=invSqrtFast(normal.z*normal.z+normal.x*normal.x);
+			
+			//*tangent = normalize(Vec3<T>(normal.z, 0, -normal.x));
+			*tangent = Vec3<T>(normal.z*nn, 0, -normal.x*nn);
+			
+			*binormal = Vec3<T>(
+							normal.y*(*tangent).z,
+							normal.z*(*tangent).x - normal.x*(*tangent).z,
+							-normal.y*(*tangent).x
+						);
+		}
 	else
-		*tangent = normalize(cross(Vec3<T>(1, 0, 0), normal));
-	*binormal = normalize(cross(normal, *tangent));
+		//*tangent = normalize(cross(Vec3<T>(1, 0, 0), normal));
+		//tigra
+		{
+			const T nn=invSqrtFast(normal.z*normal.z+normal.y*normal.y);
+			
+			//*tangent = normalize(Vec3<T>(0, -normal.z, normal.y));
+			*tangent = Vec3<T>(0, -normal.z*nn, normal.y*nn);
+			
+			*binormal = Vec3<T>(
+							normal.y*(*tangent).z - normal.z*(*tangent).y,
+							- normal.x*(*tangent).z,
+							normal.x*(*tangent).y
+						);
+		}
+		
+	//- 12*	
+	//*binormal = normalize(cross(normal, *tangent));
+
 }
 
 /*

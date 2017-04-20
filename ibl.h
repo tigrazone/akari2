@@ -39,8 +39,12 @@ public:
 		float theta, phi;
 		directionToPolarCoordinate(dir, &theta, &phi);
 						
-		const float iblv = theta / kPI;
-		const float iblu = phi / (2.0f * kPI);
+		//const float iblv = theta / kPI;
+		//tigra
+		const float iblv = theta * kPI1;
+		//const float iblu = phi / (2.0f * kPI);
+		//tigra
+		const float iblu = phi * kPI12;
 						
 		const float iblx = clamp(float(iblu * image_.width()), (float)0, image_.width() - 1.0f);
 		const float ibly = clamp(float(iblv * image_.height()), (float)0, image_.height() - 1.0f);
@@ -48,6 +52,7 @@ public:
 		return image_.at(iblx, ibly);
 	}
 
+	//not used
 	std::vector<Sample> create_sample_from_importance_map(const int num_sample, Random& random, const Float3& in, const Float3& normal,  BRDF& brdf) {
 		Image now_importance_map = warped_importance_map_;
 
@@ -58,9 +63,14 @@ public:
 		if (dot(in, now_normal) > 0)
 			now_normal = -now_normal;
 
-		float total = 0;
-		std::vector<float> pdf(width * height);
-		std::vector<float> cdf(width * height);
+		float total = 0;		
+			
+			const float wh=width * height;
+			const float w1=1.0f / width;
+			const float h1=1.0f / height;
+			
+		std::vector<float> pdf(wh);
+		std::vector<float> cdf(wh);
 
 		const float ox = random.next01();
 		const float oy = random.next01();
@@ -69,21 +79,32 @@ public:
 			for (int ix = 0; ix < width; ++ix) {
 
 				float value = 0;
-				const int SuperSample = 1;
-				for (int sy = 0; sy < SuperSample; ++sy) {
-					const float u = (float)(ix + ox) / width;
-					const float v = (float)(iy + oy) / height;
+				//const int SuperSample = 1;
+				//for (int sy = 0; sy < SuperSample; ++sy) 
+				{
+					const float u = (float)(ix + ox) * w1;
+					const float v = (float)(iy + oy) * h1;
 
-					const float phi = u * 2.0f * kPI;
-					const float y = (1.0f - v) * 2.0f - 1.0f;
+					//const float phi = u * 2.0f * kPI;
+					//tigra
+					const float phi = u * kPI2;
+					//const float y = (1.0f - v) * 2.0f - 1.0f;
+					//const float y = (2.0f - v - v) - 1.0f;
+					const float y = 1.0f - v - v;
 
 					const float sqrt_y = sqrt(1 - y * y);
+		
+		float ss,cc;
+		
+		sincosf(phi,&ss, &cc);
+		
 
-					const Float3 dir = Float3(sqrt_y * cos(phi), y, sqrt_y * sin(phi));
+					const Float3 dir = Float3(sqrt_y * cc, y, sqrt_y * ss);
 
 					const float cdot = clamp(dot(now_normal, dir), 0.0f, 1.0f);
 		
-					value += cdot * luminance(brdf.eval(in, now_normal, dir)) / SuperSample;
+					//value += cdot * luminance(brdf.eval(in, now_normal, dir)) / SuperSample;
+					value += cdot * luminance(brdf.eval(in, now_normal, dir)) ;
 				}
 
 				now_importance_map.at(ix, iy) *= value;
@@ -151,14 +172,20 @@ public:
 		// CDFを作る
 		pdf[0] = now_importance_map.at(0, 0).x / total;
 		cdf[0] = pdf[0];
+		
 		for (int i = 1; i < width * height; ++i) {
 			const int x = i % width;
-			const int y = i / width;
+			const int y = i * w1;
 			pdf[i] = now_importance_map.at(x, y).x / total;
 			cdf[i] = pdf[i] + cdf[i - 1];
 		}
 		{
-			std::vector<Sample> samples(num_sample);
+			std::vector<Sample> samples(num_sample);			
+			
+			const float wh_kPI14=width * height * kPI14;
+			const float w1=1.0f / width;
+			const float h1=1.0f / height;
+			
 			for (int i = 0; i < num_sample; ++i) {
 				const float randomnumber = random.next01();
 				std::vector<float>::iterator ite = lower_bound(cdf.begin(), cdf.end(), randomnumber);
@@ -166,19 +193,32 @@ public:
 
 				// 方向決定
 				const int ix = index % width;
-				const int iy = index / width;
-				const float u = (float)(ix + random.next01()) / width;
-				const float v = (float)(iy + random.next01()) / height;
+				const int iy = index * w1;
+				const float u = (float)(ix + random.next01()) * w1;
+				const float v = (float)(iy + random.next01()) * h1;
 				
-				const float phi = u * 2.0f * kPI;
-				const float y = (1.0f - v) * 2.0f - 1.0f;
-				const Float3 out = Float3(sqrt(1 - y*y) * cos(phi), y, sqrt(1 - y*y) * sin(phi));
+				//const float phi = u * 2.0f * kPI;
+				//tigra
+				const float phi = u * kPI2;
+				//const float y = (1.0f - v) * 2.0f - 1.0f;
+				//const float y = (2.0f - v - v) - 1.0f;
+				const float y = 1.0f - v - v;
+				const float sqrt_y2 = sqrt(1 - y*y);
+				//const Float3 out = Float3(sqrt(1 - y*y) * cos(phi), y, sqrt(1 - y*y) * sin(phi));
+				//tigra
+		
+		float ss,cc;
+		
+		sincosf(phi,&ss, &cc);
+		
+				const Float3 out = Float3(sqrt_y2 * cc, y, sqrt_y2 * ss);
 
 				//samples[i].dir = Sampling::uniformHemisphereSurface(random, normal, tangent, binormal);
 				//samples[i].pdf = 1.0f / (2.0f * kPI);
 				
 				samples[i].dir = out;
-				samples[i].pdf = pdf[index] * width * height * (1.0f / (4.0f * kPI));
+				//samples[i].pdf = pdf[index] * width * height * (1.0f / (4.0f * kPI));
+				samples[i].pdf = pdf[index] * wh_kPI14;
 				
 			}
 
@@ -187,6 +227,8 @@ public:
 
 	}
 	
+	
+	//not used
 	std::vector<Sample> create_sample_only_from_importance_map(const int num_sample, Random& random, const Float3& in, const Float3& normal,  BRDF& brdf, std::vector<float>& pdf) {
 		Image now_importance_map = warped_importance_map_;
 
@@ -200,6 +242,9 @@ public:
 		float total = 0;
 		pdf.resize(width * height);
 		std::vector<float> cdf(width * height);
+		
+		const float w1 = 1.0f / width;
+		const float h1 = 1.0f / height;
 
 		for (int iy = 0; iy < height; ++iy) {
 			for (int ix = 0; ix < width; ++ix) {
@@ -207,13 +252,23 @@ public:
 				float value = 0;
 				const int SuperSample = 1;
 				for (int sy = 0; sy < SuperSample; ++sy) {
-					const float u = (float)(ix + random.next01()) / width;
-					const float v = (float)(iy + random.next01()) / height;
+					const float u = (float)(ix + random.next01()) * w1;
+					const float v = (float)(iy + random.next01()) * h1;
 
-					const float phi = u * 2.0f * kPI;
-					const float y = (1.0f - v) * 2.0f - 1.0f;
+					const float phi = u * kPI2;
+					//const float y = (1.0f - v) * 2.0f - 1.0f;
+					//const float y = (2.0f - v - v) - 1.0f;
+					const float y = 1.0f - v - v;
+					const float sqrt_y2 = sqrt(1 - y*y);
 
-					const Float3 dir = Float3(sqrt(1 - y*y) * cos(phi), y, sqrt(1 - y*y) * sin(phi));
+					//const Float3 dir = Float3(sqrt(1 - y*y) * cos(phi), y, sqrt(1 - y*y) * sin(phi));
+					//tigra
+		
+		float ss,cc;
+		
+		sincosf(phi,&ss, &cc);
+		
+					const Float3 dir = Float3(sqrt_y2 * cc, y, sqrt_y2 * ss);
 
 					const float cdot = clamp(dot(now_normal, dir), 0.0f, 1.0f);
 
@@ -228,14 +283,18 @@ public:
 		// CDFを作る
 		pdf[0] = now_importance_map.at(0, 0).x / total;
 		cdf[0] = pdf[0];
+		
 		for (int i = 1; i < width * height; ++i) {
 			const int x = i % width;
-			const int y = i / width;
+			const int y = i * w1;
 			pdf[i] = now_importance_map.at(x, y).x / total;
 			cdf[i] = pdf[i] + cdf[i - 1];
 		}
 		{
 			std::vector<Sample> samples(num_sample);
+			
+			const float wh_kPI14=width * height * kPI14;
+			
 			for (int i = 0; i < num_sample; ++i) {
 				const float randomnumber = random.next01();
 				std::vector<float>::iterator ite = lower_bound(cdf.begin(), cdf.end(), randomnumber);
@@ -247,21 +306,31 @@ public:
 				const float u = (float)(ix + random.next01()) / width;
 				const float v = (float)(iy + random.next01()) / height;
 				
-				const float phi = u * 2.0f * kPI;
-				const float y = (1.0f - v) * 2.0f - 1.0f;
-				const Float3 out = Float3(sqrt(1 - y*y) * cos(phi), y, sqrt(1 - y*y) * sin(phi));
+				const float phi = u * kPI2;
+				//const float y = (1.0f - v) * 2.0f - 1.0f;
+				//const float y = (2.0f - v - v) - 1.0f;
+				const float y = 1.0f - v - v;
+				const float sqrt_y2 = sqrt(1 - y*y);
+				//const Float3 out = Float3(sqrt(1 - y*y) * cos(phi), y, sqrt(1 - y*y) * sin(phi));
+				//tigra
+		
+		float ss,cc;
+		
+		sincosf(phi,&ss, &cc);
+		
+				const Float3 out = Float3(sqrt_y2 * cc, y, sqrt_y2 * ss);
 
 				//samples[i].dir = Sampling::uniformHemisphereSurface(random, normal, tangent, binormal);
 				//samples[i].pdf = 1.0f / (2.0f * kPI);
 				
 				samples[i].dir = out;
-				samples[i].pdf = pdf[index] * width * height * (1.0f / (4.0f * kPI));
+				samples[i].pdf = pdf[index] * wh_kPI14;
 			}
 			
 
 			// 確率密度関数マップを立体角測度に変換しとく（MIS用）
 			for (int i = 1; i < width * height; ++i) {
-				pdf[i] *= width * height * (1.0f / (4.0f * kPI));
+				pdf[i] *= wh_kPI14;
 			}
 
 			return samples;
@@ -269,6 +338,9 @@ public:
 
 	}
 
+	
+	//not used
+	
 	// const float phi = u * 2.0f * kPI;
 	// const float y = (1.0f - v) * 2.0f - 1.0f;
 	// 
@@ -278,7 +350,9 @@ public:
 		directionToPolarCoordinate(dir, &theta, &phi);
 
 		const float v = 1.0f - (dir.y + 1.0f) / 2.0f;
-		const float u = phi / (2.0f * kPI);
+		//const float u = phi / (2.0f * kPI);
+		//tigra
+		const float u = phi * kPI12;
 
 		const int x = clamp(int(u * importance_map_.width()), 0, int(importance_map_.width())-1);
 		const int y = clamp(int(v * importance_map_.height()), 0, int(importance_map_.height())-1);
@@ -287,6 +361,7 @@ public:
 	}
 
 
+	//used BUT сама importance map не используется!
 	void create_importance_map(const int input_width, const int input_height) {
 		importance_map_.resize(kWarpedImportanceMapSize, kWarpedImportanceMapSize);
 		warped_importance_map_.resize(kWarpedImportanceMapSize, kWarpedImportanceMapSize);
@@ -341,10 +416,20 @@ public:
 						const float u = (float)(ix + (float)sx / SuperX) / width;
 						const float v = (float)(iy + (float)sy / SuperY) / height;
 
-						const float phi = u * 2.0f * kPI;
-						const float y = (1.0f - v) * 2.0f - 1.0f;
+						const float phi = u * kPI2;
+						//const float y = (1.0f - v) * 2.0f - 1.0f;
+						//const float y = (2.0f - v - v) - 1.0f;
+						const float y = 1.0f - v - v;
+						const float sqrt_y2 = sqrt(1 - y*y);
 
-						const Float3 dir = Float3(sqrt(1 - y*y) * cos(phi), y, sqrt(1 - y*y) * sin(phi));
+						//const Float3 dir = Float3(sqrt(1 - y*y) * cos(phi), y, sqrt(1 - y*y) * sin(phi));
+						//tigra
+		
+		float ss,cc;
+		
+		sincosf(phi,&ss, &cc);
+		
+						const Float3 dir = Float3(sqrt_y2 * cc, y, sqrt_y2 * ss);
 						accum += sample_from_direction(dir) / (SuperX * SuperY);
 					}
 				}
@@ -360,10 +445,10 @@ public:
 				warped_importance_map_.at(ix, iy) = warped_importance_map_.at(ix, iy) / total;
 			}
 		}
-		/*
-		HDROperator::save("warped_importance.hdr", &warped_importance_map_);
-		HDROperator::save("importance.hdr", &importance_map_);
-		*/
+		
+		//HDROperator::save("warped_importance.hdr", &warped_importance_map_);
+		//HDROperator::save("importance.hdr", &importance_map_);
+		
 	}
 };
 

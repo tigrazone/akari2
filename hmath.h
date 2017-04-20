@@ -5,6 +5,8 @@
 
 #include "vec3.h"
 
+
+
 namespace hstd {
 	
 template<typename T>
@@ -38,15 +40,28 @@ inline T smoothstep (T edge0, T edge1, T x)
 /// </summary>
 template<typename T>
 inline void directionToPolarCoordinate(const Vec3<T>& dir, T *theta, T *phi) {
+	/*
 	*theta = acos(dir.y);
 	*phi = atan2(dir.z, dir.x);
+	*/
+	
+	*theta = acos(dir.y);
+	//*phi = acos(dir.x / sqrt(dir.x * dir.x + dir.z * dir.z));
+	*phi = acos(dir.x *invSqrtFast(dir.x * dir.x + dir.z * dir.z));
+	
+	
 	if (*phi < 0)
-		*phi += 2.0f * kPI;
+		//*phi += 2.0f * kPI;
+		//tigra
+		*phi += kPI2;
 }
 
 template<typename T>
 inline Vec3<T> reflect(const Vec3<T> &in, const Vec3<T> &normal) {
-	return normalize(in - normal * 2.0 * dot(normal, in));
+	return 
+	//normalize
+	//(in - normal * 2.0 * dot(normal, in));
+	(in - normal * dot2(normal, in));
 }
 
 }

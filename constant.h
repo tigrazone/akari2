@@ -22,6 +22,10 @@ inline double PI() {
 };
 
 static const float kPI = PI<float>();
+static const float kPI2 = kPI+kPI;
+static const float kPI1 = 1.0f/kPI;
+static const float kPI12 = 1.0f/ (2.0f * kPI);
+static const float kPI14 = (1.0f / (4.0f * kPI));
 
 static const float kINF = std::numeric_limits<float>::infinity();
 

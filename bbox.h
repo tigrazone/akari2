@@ -53,7 +53,11 @@ public:
 
 	float surfaceArea() {
 		const Float3 d = pmax - pmin;
-		return 2.0f * (d.x * d.y + d.x * d.z + d.y * d.z);
+		//return 2.0f * (d.x * d.y + d.x * d.z + d.y * d.z);
+		
+		const float dd=d.x * d.y + d.x * d.z + d.y * d.z;
+
+		return dd+dd;
 	}
 	float volume() {
 		const Float3 d = pmax - pmin;
@@ -76,6 +80,7 @@ public:
 			return AxisZ;
 	}
 
+	//not used
 	bool checkIntersect(const Ray &ray, float *hitt0, float *hitt1) {
 		float t0 = 0.0, t1 = kINF;
 		for (int i = 0; i < 3; ++i) {

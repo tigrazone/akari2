@@ -7,8 +7,10 @@
 #include "intersection.h"
 #include "qbvh.h"
 
-#include "memfile.h"
-#include "textutil.h"
+// #include "memfile.h"
+// #include "textutil.h"
+
+#include <unordered_map>
 
 namespace hstd {
 
@@ -20,11 +22,11 @@ struct Material {
 	float specular_coefficient;
 	float metalic;
 
-	Material(Float3& diffuse, Float3& specular, float specular_coefficient, float metalic) :
+	Material(Float3 diffuse, Float3 specular, float specular_coefficient, float metalic) :
 	diffuse(diffuse), specular(specular), specular_coefficient(specular_coefficient), metalic(metalic) {}
 };
 
-typedef std::map<std::string, Material> MaterialMap;
+typedef std::unordered_map<std::string, Material> MaterialMap;
 
 struct Triangle {
 	Int3 v_index;

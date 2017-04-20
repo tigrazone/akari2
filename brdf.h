@@ -31,11 +31,15 @@ public:
 
 	LambertianBRDF(const Color& reflectance) : reflectance_(reflectance) {}
 	virtual Color eval(const Float3& in, const Float3& normal, const Float3& out) const {
-		return reflectance_ / kPI;
+		//return reflectance_ / kPI;
+		//tigra
+		return reflectance_ * kPI1;
 	}
 
 	virtual float eval_pdf(const Float3& in, const Float3& normal, const Float3& out) const {
-		return dot(normal, out) / kPI;
+		//return dot(normal, out) / kPI;
+		//tigra
+		return dot(normal, out) * kPI1;
 	}
 
 	virtual Float3 sample(Random& random, const Float3& in, const Float3& normal, float* pdf) const {
@@ -72,16 +76,26 @@ public:
 		Float3 reflection_dir = reflect(in, normal);
 		float cosa = dot(reflection_dir, out);
 		if (cosa < 0)
-			cosa = 0.0f;
-		return reflectance_ * (n_ + 2.0f) / (2.0f * kPI) * pow(cosa, n_);
+			{
+				//cosa = 0.0f;
+				return Float3(0.0f, 0.0f, 0.0f);
+			}
+		//return reflectance_ * (n_ + 2.0f) / (2.0f * kPI) * pow(cosa, n_);
+		//tigra
+		return reflectance_ * (n_ + 2.0f) * kPI12 * pow(cosa, n_);
 	}
 
 	virtual float eval_pdf(const Float3& in, const Float3& normal, const Float3& out) const {
 		Float3 reflection_dir = reflect(in, normal);
 		float cosa = dot(reflection_dir, out);
 		if (cosa < 0)
-			cosa = 0.0f;
-		return (n_ + 1.0f) / (2.0f * kPI) * pow(cosa, n_);
+			{
+				cosa = 0.0f;
+				return cosa;
+			}
+		//return (n_ + 1.0f) / (2.0f * kPI) * pow(cosa, n_);
+		//tigra
+		return (n_ + 1.0f) * kPI12 * pow(cosa, n_);
 	}
 
 	virtual Float3 sample(Random& random, const Float3& in, const Float3& normal, float* pdf) const {
@@ -93,10 +107,32 @@ public:
 		float u1 = random.next01();
 		float u2 = random.next01();
 
+		/*
 		float theta = acos(pow(u1, 1 / (n_ + 1)));
 		float phi = u2 * 2.0f * kPI;
 							
 		dir = tangent * sin(theta) * cos(phi) + reflection_dir * cos(theta) + binormal *sin(theta) * sin(phi);
+		*/
+		
+		//tigra		
+		//float theta = acos(pow(u1, 1 / (n_ + 1)));
+		float cos_theta = pow(u1, 1 / (n_ + 1));
+		float sin_theta = sqrt(1.0f - cos_theta*cos_theta);
+		//float phi = u2 * 2.0f * kPI;
+		//tigra
+		float phi = u2 * kPI2;
+					
+
+		//tigra: use sincos
+		
+		float ss,cc;
+		
+		sincosf(phi,&ss, &cc);
+		
+		//dir = tangent * sin_theta * cos(phi) + reflection_dir * cos_theta + binormal *sin_theta * sin(phi);
+		dir = tangent * sin_theta * cc + reflection_dir * cos_theta + binormal *sin_theta * ss;
+		// - 2 sin, 1 cos, 1 acos => + 1 sqrt 1 * => 4 func -> 1 func
+		
 		
 		if (pdf != NULL) {
 			*pdf = eval_pdf(in, normal, dir);

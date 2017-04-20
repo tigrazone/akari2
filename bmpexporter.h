@@ -2,6 +2,11 @@
 #ifndef _BMP_EXPORTER_H_
 #define _BMP_EXPORTER_H_
 
+
+#define BMP_SAVER
+
+
+
 /**
 24bitのピクセルデータを24bit形式のBMPに出力する
 */

@@ -4,7 +4,7 @@
 #include <memory>
 #include <algorithm>
 #include <vector>
-#include <iostream>
+//#include <iostream>
 
 namespace hstd {
 
@@ -16,13 +16,15 @@ public:
 private:
 	FilePtr fp_;
 	std::vector<unsigned char> buffer_;
-	int now_index_;
+	unsigned long long now_index_, buffer_sz_;
+	
+	unsigned long long total_size, block_pos;
 
 	bool skip_if_return() {
-		if (now_index_ >= buffer_.size())
+		if (now_index_ >= buffer_sz_)
 			return false;
 
-		if (now_index_ + 1 < buffer_.size()) {
+		if (now_index_ + 1 < buffer_sz_) {
 			if (buffer_[now_index_] == '\r' && buffer_[now_index_ + 1] == '\n') {
 				now_index_ += 2;
 				return true;
@@ -44,7 +46,7 @@ public:
 		 fp_ = FilePtr(fopen(filename, "rb"), [](FILE *f){ if (f != NULL) fclose(f); });
 		 
 		if (fp_ == NULL) {
-			std::cerr << "Load Error: " << filename << std::endl;
+			printf("Load Error: %s\n", filename);
 			return false;
 		}
 		
@@ -55,13 +57,16 @@ public:
 		const long end_pos = ftell(fp_.get());
 		fseek(fp_.get(), now_pos, SEEK_SET);
 
-		const long total_size = end_pos - now_pos;
+		total_size = end_pos - now_pos;
+		printf("file size: %.3fk\n",(float)(total_size/1024.0f));
+
+		buffer_sz_ = total_size;
 		buffer_.resize(total_size);
 
 		
 		const size_t ret_size = fread(&buffer_[0], sizeof(unsigned char), total_size, fp_.get());
 		if (ret_size < total_size) {
-			std::cerr << "Error : fread" << std::endl;
+			printf("Error : fread\n");
 			return false;
 		}
 
@@ -72,7 +77,7 @@ public:
 	// 一行読み込み
 	// 改行はなし
 	bool gets(std::string* tmp) {
-		if (now_index_ >= buffer_.size())
+		if (now_index_ >= buffer_sz_)
 			return false;
 
 
@@ -80,7 +85,7 @@ public:
 			if (skip_if_return()) 
 				break;
 
-			if (now_index_ < buffer_.size())
+			if (now_index_ < buffer_sz_)
 				*tmp += buffer_[now_index_];
 
 			++now_index_;

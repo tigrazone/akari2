@@ -25,6 +25,8 @@
 #include "triangleMesh.h"
 #include "constant.h"
 
+#include "sse.hxx"
+
 namespace hstd {
 
 namespace rt {
@@ -49,6 +51,37 @@ static const int OrderTable[] = {
 };
 
 
+	
+	void * _aligned_malloc(size_t size, int align) {
+    /* alignment could not be less then zero */
+    if (align < 0) {
+        return NULL;
+    }
+     
+    /* Allocate necessary memory area
+     * client request - size parameter -
+     * plus area to store the address
+     * of the memory returned by standard
+     * malloc().
+     */
+    void *ptr;
+    void *p = malloc(size + align - 1 + sizeof(void*));
+     
+    if (p != NULL) {
+        /* Address of the aligned memory according to the align parameter*/
+        ptr = (void*) (((unsigned int)p + sizeof(void*) + align -1) & ~(align-1));
+        /* store the address of the malloc() above
+         * at the beginning of our total memory area.
+         * You can also use *((void **)ptr-1) = p
+         * instead of the one below.
+         */
+        *((void**)((unsigned int)ptr - sizeof(void*))) = p;
+        /* Return the address of aligned memory */
+        return ptr; 
+    }
+    return NULL;
+}
+
 const float kEPS = 1e-5;
 
 class QBVH {
@@ -63,7 +96,9 @@ private:
 
 		BVHPrimitiveInfo(const int pn, const BBox& b) :
 			primitiveNumber(pn), bounds(b){
-				centroid = 0.5f * b.pmin + 0.5f * b.pmax;
+				//centroid = 0.5f * b.pmin + 0.5f * b.pmax; //6*
+				//tigra: speedup
+				centroid = 0.5f *( b.pmin + b.pmax);  //3*
 		}
 	};
 
@@ -120,6 +155,7 @@ private:
 
 	struct CompareToBucket {
 		int splitBucket, nBuckets, dim;
+		float nBuckets_divided;
 		const BBox &centroidBounds;
 
 		CompareToBucket(int split, int num, int d, const BBox &b)
@@ -127,11 +163,21 @@ private:
 				splitBucket = split;
 				nBuckets = num;
 				dim = d;
+				
+				nBuckets_divided = nBuckets  / 
+								(centroidBounds.pmax[dim] - centroidBounds.pmin[dim]);
+				
 		}
 
 		bool operator()(const BVHPrimitiveInfo &p) const {
+			/*
 			int b = (int)(nBuckets * ((p.centroid[dim] - centroidBounds.pmin[dim]) / 
 								(centroidBounds.pmax[dim] - centroidBounds.pmin[dim])));
+			*/
+						
+			int b = (int)(nBuckets_divided * ((p.centroid[dim] - centroidBounds.pmin[dim])));
+			
+
 			if (b == nBuckets) 
 				b = nBuckets - 1;
 			return b <= splitBucket;
@@ -181,10 +227,10 @@ public:
 		for (int i = 0; i < 16; ++i)
 			stats[i] = 0;
 		//std::cout << sizeof(SIMDTrianglePack) << std::endl;
-		__declspec(align(32)) float one_f[4] = {1.0f, 1.0f, 1.0f, 1.0f};
-		__declspec(align(32)) float inf_f[4] = {kINF, kINF, kINF, kINF};
-		__declspec(align(32)) float zero_f[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-		__declspec(align(32)) float keps_f[4] = {kEPS, kEPS, kEPS, kEPS};
+		MM_ALIGN32  float one_f[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+		MM_ALIGN32  float inf_f[4] = {kINF, kINF, kINF, kINF};
+		MM_ALIGN32  float zero_f[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+		MM_ALIGN32  float keps_f[4] = {kEPS, kEPS, kEPS, kEPS};
 		
 		zero = _mm_load_ps(zero_f);
 		one = _mm_load_ps(one_f);
@@ -192,14 +238,15 @@ public:
 		keps = _mm_load_ps(keps_f);
 	};
 
-	BVHBuildNode* recursiveBuild(std::vector<BVHPrimitiveInfo> &buildData, int start, int end, int *totalNodes, std::vector<RefTriangle*> &orderedPrims) {
+	BVHBuildNode* recursiveBuild(std::vector<BVHPrimitiveInfo> &buildData, int start, int end, int *totalNodes, std::vector<RefTriangle*> &orderedPrims) 
+	{
 		(*totalNodes) ++;
 		BVHBuildNode* node = new BVHBuildNode;
 
 		BBox bbox;
 		for (int i = start; i < end; ++i)
-			bbox = unionBBox(bbox, buildData[i].bounds);
-
+			bbox = unionBBox(bbox, buildData[i].bounds);		 
+	
 		int nPrimitives = end - start;
 		if (nPrimitives <= 4) {
 			//std::cout << nPrimitives << " ";
@@ -208,9 +255,9 @@ public:
 
 			SIMDTrianglePack *simdt = (SIMDTrianglePack*)_aligned_malloc(sizeof(SIMDTrianglePack), 16);
 			
-			__declspec(align(16)) float x[4 * 3] = {0};
-			__declspec(align(16)) float y[4 * 3] = {0};
-			__declspec(align(16)) float z[4 * 3] = {0};
+			MM_ALIGN16 float x[4 * 3] = {0};
+			MM_ALIGN16 float y[4 * 3] = {0};
+			MM_ALIGN16 float z[4 * 3] = {0};
 
 			int cnt = 0;
 			for (int i = start; i < end; ++i , ++cnt){
@@ -234,10 +281,16 @@ public:
 				simdt->idx[cnt%4] = -1;
 			}
 
+			int i4=0;
+		
 			for (int i = 0; i < 3; ++i) {
-				simdt->x[i] = _mm_load_ps(x + 4 * i);
-				simdt->y[i] = _mm_load_ps(y + 4 * i);
-				simdt->z[i] = _mm_load_ps(z + 4 * i);
+				
+				//simdt->x[i] = _mm_load_ps(x + 4 * i);
+				simdt->x[i] = _mm_load_ps(x + i4);
+				simdt->y[i] = _mm_load_ps(y + i4);
+				simdt->z[i] = _mm_load_ps(z + i4);
+				
+				i4 += 4;
 			}
 
 			simdTris.push_back(simdt);
@@ -245,11 +298,13 @@ public:
 //			node->InitLeaf(firstPrimOffset, nPrimitives, bbox, NULL);
 		} else {
 			// 中間ノード
+			// промежуточный узел
 			BBox centroidBounds;
 			for (int i = start; i < end; ++i)
 				centroidBounds = unionBBox(centroidBounds, buildData[i].centroid);
 			int dim = centroidBounds.maximumExtent();
-			int mid = (start + end) / 2;
+			//int mid = (start + end) / 2;
+			int mid = (start + end) >> 1;
 
 			if (nPrimitives <= 16) {
 				// Equally-sized subsets
@@ -263,15 +318,28 @@ public:
 					int count;
 					BBox bounds;
 				};
+				
 				BucketInfo buckets[nBuckets];
+
+				float nBuckets1 = nBuckets  / (centroidBounds.pmax[dim] - centroidBounds.pmin[dim]);
+
 				for (int i = start; i < end;  ++i ) {
+					/*
 					int b = (int)(nBuckets * ((buildData[i].centroid[dim] - centroidBounds.pmin[dim]) /
 										(centroidBounds.pmax[dim] - centroidBounds.pmin[dim])));
+					*/
+										
+					int b = (int)(nBuckets1 * (buildData[i].centroid[dim] - centroidBounds.pmin[dim]));
+
 					if (b == nBuckets) b = nBuckets - 1;
 					buckets[b].count ++;
 					buckets[b].bounds = unionBBox(buckets[b].bounds, buildData[i].bounds);
 				}
 				float cost[nBuckets - 1];
+				
+				float bbox_SurfaceArea 	=	bbox.surfaceArea(); 
+				float bbox_SurfaceArea1 =	1.0f/bbox_SurfaceArea;
+
 				for (int i = 0; i < nBuckets - 1; i ++) {
 					BBox b0, b1;
 					int count0 = 0, count1  = 0;
@@ -283,7 +351,8 @@ public:
 						b1 = unionBBox(b1, buckets[j].bounds);
 						count1 += buckets[j].count;
 					}
-					cost[i] += 0.125f + (count0 * b0.surfaceArea() + count1 * b1.surfaceArea()) / bbox.surfaceArea();
+					//cost[i] += 0.125f + (count0 * b0.surfaceArea() + count1 * b1.surfaceArea()) / bbox.surfaceArea();
+					cost[i] += 0.125f + (count0 * b0.surfaceArea() + count1 * b1.surfaceArea()) * bbox_SurfaceArea1;
 				}
 
 				float minCost = cost[0];
@@ -296,9 +365,19 @@ public:
 				}
 
 				if (nPrimitives > 0 || minCost < nPrimitives) {
-					BVHPrimitiveInfo* pmid = std::partition(&buildData[start], &buildData[end-1] + 1, CompareToBucket(minCostSplit, nBuckets, dim, centroidBounds));
+					BVHPrimitiveInfo* pmid = std::partition(&buildData[start], &buildData[end-1] + 1, 
+						                                    CompareToBucket(minCostSplit, nBuckets, dim, centroidBounds));
 					mid = pmid - &buildData[0];
 				}
+				/*
+				Сортирует последовательность таким образом, чтобы сначала шли элементы, для которых предикат возвращает значение 
+				true затем false
+
+				Алгоритм partition() сортирует последовательность, заданную параметрами start и end, таким образом, 
+				чтобы все элементы, для которых заданный параметром pfn предикат возвращает значение true, 
+				размещались перед теми элементами, для которых этот предикат возвращает значение false. 
+				Алгоритм возвращает итератор, указывающий на начало диапазона элементов, для которых предикат равен значению false.
+				*/
 			}
 
 			node->InitInterior(dim,
@@ -338,7 +417,7 @@ public:
 				c[2] = rc;
 			}
 		}
-		__declspec(align(16)) float bboxes[2][3][4];
+		MM_ALIGN16 float bboxes[2][3][4];
 		for (int j = 0; j < 3; ++j) {
 			for (int k = 0; k < 4; ++k) {
 				if (c[k] != NULL) {
@@ -402,7 +481,7 @@ public:
 		//std::cerr << "QBVH: " << simdNodes.size() << std::endl;
 		// print(root, 0);
 	}
-
+	
 	inline int test_AABB(
 		const __m128 bboxes[2][3],  //4boxes : min-max[2] of xyz[3] of boxes[4]
 
@@ -412,6 +491,8 @@ public:
 		__m128 tmin, __m128 tmax    //ray range tmin-tmax 
 		)
 	{
+		//6*
+		
 		// x coordinate
 		tmin = _mm_max_ps(
 			tmin,
@@ -442,6 +523,16 @@ public:
 			_mm_mul_ps(_mm_sub_ps(bboxes[1 - sign[2]][2], org[2]), idir[2])
 			);
 		return _mm_movemask_ps(_mm_cmpge_ps(tmax, tmin));//tmin<tmaxとなれば交差
+		//__m128 _mm_cmpge_ps(__m128 a, __m128 b) Compare for greater-than-or-equal
+
+		/*
+		_mm_movemask_ps
+Creates a 4-bit mask from the most significant bits of the four single-precision, floating-point values.
+int _mm_movemask_ps( __m128 a );
+Return Value
+
+ r := sign(a3)<<3 | sign(a2)<<2 | sign(a1)<<1 | sign(a0)
+ */
 	}
 	
 	bool intersect(const Ray &ray, Hitpoint* hitpoint) {
@@ -450,17 +541,17 @@ public:
 		__m128 sseiDir[3];
 		int sign[3];
 		Float3 idir(1.0f / ray.dir.x, 1.0f / ray.dir.y, 1.0f / ray.dir.z);
-		__declspec(align(16)) float r_idir_x[4] = {idir.x, idir.x, idir.x, idir.x};
-		__declspec(align(16)) float r_idir_y[4] = {idir.y, idir.y, idir.y, idir.y};
-		__declspec(align(16)) float r_idir_z[4] = {idir.z, idir.z, idir.z, idir.z};
+		MM_ALIGN16 float r_idir_x[4] = {idir.x, idir.x, idir.x, idir.x};
+		MM_ALIGN16 float r_idir_y[4] = {idir.y, idir.y, idir.y, idir.y};
+		MM_ALIGN16 float r_idir_z[4] = {idir.z, idir.z, idir.z, idir.z};
 					
-		__declspec(align(16)) float r_org_x[4] = {ray.org.x, ray.org.x, ray.org.x, ray.org.x};
-		__declspec(align(16)) float r_org_y[4] = {ray.org.y, ray.org.y, ray.org.y, ray.org.y};
-		__declspec(align(16)) float r_org_z[4] = {ray.org.z, ray.org.z, ray.org.z, ray.org.z};
+		MM_ALIGN16 float r_org_x[4] = {ray.org.x, ray.org.x, ray.org.x, ray.org.x};
+		MM_ALIGN16 float r_org_y[4] = {ray.org.y, ray.org.y, ray.org.y, ray.org.y};
+		MM_ALIGN16 float r_org_z[4] = {ray.org.z, ray.org.z, ray.org.z, ray.org.z};
 
-		__declspec(align(16)) float r_dir_x[4] = {ray.dir.x, ray.dir.x, ray.dir.x, ray.dir.x};
-		__declspec(align(16)) float r_dir_y[4] = {ray.dir.y, ray.dir.y, ray.dir.y, ray.dir.y};
-		__declspec(align(16)) float r_dir_z[4] = {ray.dir.z, ray.dir.z, ray.dir.z, ray.dir.z};
+		MM_ALIGN16 float r_dir_x[4] = {ray.dir.x, ray.dir.x, ray.dir.x, ray.dir.x};
+		MM_ALIGN16 float r_dir_y[4] = {ray.dir.y, ray.dir.y, ray.dir.y, ray.dir.y};
+		MM_ALIGN16 float r_dir_z[4] = {ray.dir.z, ray.dir.z, ray.dir.z, ray.dir.z};
 					
 		__m128 dir_x = _mm_load_ps(r_dir_x);
 		__m128 dir_y = _mm_load_ps(r_dir_y);
@@ -496,14 +587,16 @@ public:
 
 			if(item.node.flag == 0){
 				const SIMDBVHNode& node = *(simdNodes[item.node.index]);
-				__declspec(align(16)) float now_distance_f[4] = {hitpoint->distance, hitpoint->distance, hitpoint->distance, hitpoint->distance};
+				MM_ALIGN16 float now_distance_f[4] = {hitpoint->distance, hitpoint->distance, hitpoint->distance, hitpoint->distance};
 				__m128 now_distance = _mm_load_ps(now_distance_f);
 				const int HitMask = test_AABB(node.bboxes, sseOrg, sseiDir, sign, zero, now_distance);
 
 				if (HitMask) {
 					const int nodeIdx = (sign[node.axis_top] << 2) | (sign[node.axis_left] << 1) | (sign[node.axis_right]);
-					int bboxOrder = OrderTable[HitMask * 8 + nodeIdx];
-					
+					//int bboxOrder = OrderTable[HitMask * 8 + nodeIdx];
+					//tigra
+					//немного ускорения
+					int bboxOrder = OrderTable[(HitMask << 3) + nodeIdx];
 
 					for (int i = 0; i < 4; ++i) {
 						if (bboxOrder & 0x4)
@@ -516,16 +609,16 @@ public:
 
 			} else {
 
-				// __declspec(align(16)) float no_hit_f[4];
-				__declspec(align(16)) float t_f[4];
-				__declspec(align(16)) float b1_f[4];
-				__declspec(align(16)) float b2_f[4];
+				// MM_ALIGN16 float no_hit_f[4];
+				MM_ALIGN16 float t_f[4];
+				MM_ALIGN16 float b1_f[4];
+				MM_ALIGN16 float b2_f[4];
 				int nohitmask;
 				SIMDTrianglePack *s = simdTris[item.leaf.index];
 				
 				float eps = 1e-4f;
-				__declspec(align(32)) float t0_f[4] = {0.0f - eps, 0.0f - eps, 0.0f - eps, 0.0f - eps};
-				__declspec(align(32)) float t1_f[4] = {1.0f + eps, 1.0f + eps, 1.0f + eps, 1.0f + eps};
+				MM_ALIGN32  float t0_f[4] = {0.0f - eps, 0.0f - eps, 0.0f - eps, 0.0f - eps};
+				MM_ALIGN32  float t1_f[4] = {1.0f + eps, 1.0f + eps, 1.0f + eps, 1.0f + eps};
 		
 				__m128 t0 = _mm_load_ps(t0_f);
 				__m128 t1 = _mm_load_ps(t1_f);
@@ -538,36 +631,46 @@ public:
 				__m128 e2_y = _mm_sub_ps(s->y[2], s->y[0]);
 				__m128 e2_z = _mm_sub_ps(s->z[2], s->z[0]);
 
+				//3*
 				__m128 s1_x = _mm_sub_ps(_mm_mul_ps(dir_y, e2_z), _mm_mul_ps(dir_z, e2_y));
 				__m128 s1_y = _mm_sub_ps(_mm_mul_ps(dir_z, e2_x), _mm_mul_ps(dir_x, e2_z));
 				__m128 s1_z = _mm_sub_ps(_mm_mul_ps(dir_x, e2_y), _mm_mul_ps(dir_y, e2_x));
-
+				
+				//3*
 				__m128 divisor = _mm_add_ps(_mm_add_ps(_mm_mul_ps(s1_x, e1_x), _mm_mul_ps(s1_y, e1_y)), _mm_mul_ps(s1_z, e1_z));
+				// == ?
 				__m128 no_hit  = _mm_cmpeq_ps(divisor, zero);	
 
+				// 1/divisor
 				__m128 invDivisor = _mm_rcp_ps(divisor);
 
 				__m128 d_x = _mm_sub_ps(sseOrg[0], s->x[0]);
 				__m128 d_y = _mm_sub_ps(sseOrg[1], s->y[0]);
 				__m128 d_z = _mm_sub_ps(sseOrg[2], s->z[0]);
 
+				// 4*
 				__m128 b1 = _mm_mul_ps(_mm_add_ps(_mm_add_ps(_mm_mul_ps(d_x, s1_x), _mm_mul_ps(d_y, s1_y)), _mm_mul_ps(d_z, s1_z)),
 										invDivisor);
 				no_hit = _mm_or_ps(no_hit, _mm_or_ps(_mm_cmplt_ps(b1, t0), _mm_cmpgt_ps(b1, t1)));
 					
+				//6*	
 				__m128 s2_x = _mm_sub_ps(_mm_mul_ps(d_y, e1_z), _mm_mul_ps(d_z, e1_y));
 				__m128 s2_y = _mm_sub_ps(_mm_mul_ps(d_z, e1_x), _mm_mul_ps(d_x, e1_z));
 				__m128 s2_z = _mm_sub_ps(_mm_mul_ps(d_x, e1_y), _mm_mul_ps(d_y, e1_x));
 
+				//4*
 				__m128 b2 = _mm_mul_ps(_mm_add_ps(_mm_add_ps(_mm_mul_ps(dir_x, s2_x), _mm_mul_ps(dir_y, s2_y)), _mm_mul_ps(dir_z, s2_z)),
 										invDivisor);
 				no_hit = _mm_or_ps(no_hit, _mm_or_ps(_mm_cmplt_ps(b2, t0), _mm_cmpgt_ps(_mm_add_ps(b1, b2), t1)));
 
+				//4*
 				__m128 t = _mm_mul_ps(_mm_add_ps(_mm_add_ps(_mm_mul_ps(e2_x, s2_x), _mm_mul_ps(e2_y, s2_y)), _mm_mul_ps(e2_z, s2_z)),
 										invDivisor);
-				
+				//24 * 1/
 				no_hit = _mm_or_ps(no_hit, _mm_cmplt_ps(t, keps));
 				
+				
+				//optimised version 11* 1/  preprocess 12* 2/  
 				nohitmask = _mm_movemask_ps(no_hit);
 				_mm_store_ps(t_f, t);
 				
