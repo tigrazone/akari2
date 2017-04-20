@@ -16,6 +16,8 @@ Port for MinGW gcc and Linux gcc by 2017 tigrazone
 * optimised code
 * optimised obj reader
 * buffered hdr read
+* sincos assember speedup
+* InvSqrt on sse
 
  
 
