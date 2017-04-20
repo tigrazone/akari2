@@ -19,8 +19,8 @@ Port for MinGW gcc and Linux gcc by 2017 tigrazone
 * sincos assember speedup
 * InvSqrt on sse
 
-<a href="https://1.bp.blogspot.com/-m2uf9hZ2ZA8/WPkPpSDBpyI/AAAAAAAAAus/ql31vdyXSVIeVnFwSd8aln6qU4cogaaRQCLcB/s1960/akari2-hb_280.jpg"><img border="0" src="https://1.bp.blogspot.com/-m2uf9hZ2ZA8/WPkPpSDBpyI/AAAAAAAAAus/ql31vdyXSVIeVnFwSd8aln6qU4cogaaRQCLcB/s400/akari2-hb_280.jpg" width="800"></a>
- click to enlarge!
+<a href="https://1.bp.blogspot.com/-m2uf9hZ2ZA8/WPkPpSDBpyI/AAAAAAAAAus/ql31vdyXSVIeVnFwSd8aln6qU4cogaaRQCLcB/s1960/akari2-hb_280.jpg"><img border="0" src="https://1.bp.blogspot.com/-m2uf9hZ2ZA8/WPkPpSDBpyI/AAAAAAAAAus/ql31vdyXSVIeVnFwSd8aln6qU4cogaaRQCLcB/s400/akari2-hb_280.jpg" width="800"></a><br>
+click to enlarge!
 
 <pre>
 
