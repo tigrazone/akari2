@@ -11,6 +11,7 @@ An HDR image "Barce_Rooftop_C_3k.hdr" is from sIBL Archive (http://www.hdrlabs.c
 This image is licensed under the Creative Commons Attribution-Noncommercial-Share Alike 3.0 License.
 
 Port for MinGW gcc and Linux gcc by 2017 tigrazone
+
 20 apr 2017
 * optimised code
 * optimised obj reader
