@@ -18,6 +18,228 @@
 #include <tchar.h>
 */
 
+//
+// Simple and fast atof (ascii to float) function.
+//
+// - Executes about 5x faster than standard MSCRT library atof().
+// - An attractive alternative if the number of calls is in the millions.
+// - Assumes input is a proper integer, fraction, or scientific format.
+// - Matches library atof() to 15 digits (except at extreme exponents).
+// - Follows atof() precedent of essentially no error checking.
+//
+// 09-May-2009 Tom Van Baak (tvb) www.LeapSecond.com
+//
+
+#define white_space(c) ((c) == ' ' || (c) == '\t')
+#define valid_digit(c) ((c) >= '0' && (c) <= '9')
+
+float FASTatof (const char *p)
+{
+    int frac;
+    float sign, value, scale;
+
+    // Skip leading white space, if any.
+
+    while (white_space(*p) ) {
+        p += 1;
+    }
+
+    // Get sign, if any.
+
+    sign = 1.0;
+    if (*p == '-') {
+        sign = -1.0;
+        p += 1;
+
+    } else if (*p == '+') {
+        p += 1;
+    }
+
+    // Get digits before decimal point or exponent, if any.
+
+    for (value = 0.0; valid_digit(*p); p += 1) {
+        value = value * 10.0 + (*p - '0');
+    }
+
+    // Get digits after decimal point, if any.
+
+    if (*p == '.') {
+        double pow10 = 10.0;
+        p += 1;
+        while (valid_digit(*p)) {
+            value += (*p - '0') / pow10;
+            pow10 *= 10.0;
+            p += 1;
+        }
+    }
+
+    // Handle exponent, if any.
+
+    frac = 0;
+    scale = 1.0;
+    if ((*p == 'e') || (*p == 'E')) {
+        unsigned int expon;
+
+        // Get sign of exponent, if any.
+
+        p += 1;
+        if (*p == '-') {
+            frac = 1;
+            p += 1;
+
+        } else if (*p == '+') {
+            p += 1;
+        }
+
+        // Get digits of exponent, if any.
+
+        for (expon = 0; valid_digit(*p); p += 1) {
+            expon = expon * 10 + (*p - '0');
+        }
+        if (expon > 308) expon = 308;
+
+        // Calculate scaling factor.
+
+        while (expon >= 50) { scale *= 1E50; expon -= 50; }
+        while (expon >=  8) { scale *= 1E8;  expon -=  8; }
+        while (expon >   0) { scale *= 10.0; expon -=  1; }
+    }
+
+    // Return signed and scaled floating point result.
+
+    return sign * (frac ? (value / scale) : (value * scale));
+}
+
+
+struct FATOF
+{
+	float mulsum;
+	float muladd;
+	float add;
+	FATOF * next;
+};
+ 
+FATOF beforedot_table[256];
+FATOF afterdot_table[256];
+ 
+void prepareMy()
+{
+	// erase tables
+	for(int i=0; i<256; i++)
+	{
+		beforedot_table[i].mulsum = 0.0;
+		beforedot_table[i].muladd = 0.0;
+		beforedot_table[i].add = 0.0;
+		beforedot_table[i].next = 0;
+		afterdot_table[i].mulsum = 0.0;
+		afterdot_table[i].muladd = 0.0;
+		afterdot_table[i].add = 0.0;
+		afterdot_table[i].next = 0;
+	}
+	// digits
+	for(int i=0; i<10; i++)
+	{
+		beforedot_table['0' + i].mulsum = 10.0;
+		beforedot_table['0' + i].muladd = 1.0;
+		beforedot_table['0' + i].add = float(i);
+		beforedot_table['0' + i].next = &beforedot_table[0];
+		afterdot_table['0' + i].mulsum = 1.0;
+		afterdot_table['0' + i].muladd = 0.1;
+		afterdot_table['0' + i].add = float(i);
+		afterdot_table['0' + i].next = &afterdot_table[0];
+	}
+	// dot
+	beforedot_table['.'].mulsum = 1.0;
+	beforedot_table['.'].muladd = 0.1;
+	beforedot_table['.'].add = 0.0;
+	beforedot_table['.'].next = &afterdot_table[0];
+}
+ 
+float myATOF(const char * str)
+{
+	float sum = 0.0;
+	float muladd = 1.0;
+	FATOF * cur = &beforedot_table[0];
+	while(true)
+	{
+		int i = *str;
+		if(cur[i].next)
+		{
+			sum *= cur[i].mulsum;
+			sum += cur[i].add * muladd;
+			muladd *= cur[i].muladd;
+			str++;
+			cur = cur[i].next;
+		}
+		else
+			break;
+	}
+	return sum;
+}
+
+
+float dbefore[301];
+float dafter[301];
+
+void prepareVariant2()
+{
+  int i1, i2;
+  
+  for(i1=0;i1<10;i1++) dbefore[i1]=i1;
+
+  for(i2=1;i2<30;i2++) 
+    for(i1=0;i1<10;i1++) dbefore[i2*10+i1]=dbefore[(i2-1)*10+i1]*10;
+
+  for(i1=0;i1<10;i1++) dafter[i1]=i1/10;
+
+  for(i2=1;i2<30;i2++)
+	for(i1=0;i1<10;i1++) dafter[i2*10+i1]=dafter[(i2-1)*10+i1]/10;
+}
+
+
+float variant2(const char *str)
+{
+	float numDouble=0;
+	
+	int i11,i12,i4, i21;
+
+    i11=0;
+	i12=0;
+	
+// Идем до точки, либо до конца числа
+	while((*(str+i12)!=0) && (*(str+i12)!='.')) i12=i12+1;
+	
+	i4=i12;
+	i12=i12-1;
+// В i11 имеем начало числа, в i12 - конец целой части числа
+
+// Берем из таблицы dbefore число по адресу i21+код числа - код цифры 0
+      i21=0;
+	  
+      while (i12>=i11) {
+		numDouble+= dbefore[i21+*(str+i12)-0x30];
+        i12--;
+		i21+=10;
+	  }
+	  
+// Восстанавливаем i12 до точки
+      i12=i4+1;
+      i21=0;
+      while (*(str+i12)) {
+        numDouble+= dafter[i21+*(str+i12)-0x30];
+        i12++;
+	  i21+=10;
+	  }
+	  
+	  return numDouble;
+}
+
+
+#define ATOF FASTatof
+//#define ATOF myATOF
+//#define ATOF atof
+//#define ATOF variant2
+
 enum 
 {
 	TOK_ERR_PARAMS,
@@ -314,26 +536,26 @@ public:
 			} else 
 				//if (!strcmp(token, "diffuse") && ret.size() >= 4) {
 				if (tok == diffuse_TOK && iis >= 4) {
-				const float x = atof(ret[1]);
-				const float y = atof(ret[2]);
-				const float z = atof(ret[3]);
+				const float x = ATOF(ret[1]);
+				const float y = ATOF(ret[2]);
+				const float z = ATOF(ret[3]);
 				diffuse = Float3(x, y, z);
 			} else 
 				//if (!strcmp(token,  "specular") && ret.size() >= 4) {
 				if (tok == specular_TOK && iis >= 4) {
-				const float x = atof(ret[1]);
-				const float y = atof(ret[2]);
-				const float z = atof(ret[3]);
+				const float x = ATOF(ret[1]);
+				const float y = ATOF(ret[2]);
+				const float z = ATOF(ret[3]);
 				specular = Float3(x, y, z);
 			} else 
 				//if (!strcmp(token, "metalic") && ret.size() >= 2) {
 				if (tok == metalic_TOK && iis >= 2) {
-				const float x = atof(ret[1]);
+				const float x = ATOF(ret[1]);
 				metalic = x;
 			} else 
 				//if (!strcmp(token, "specular_coefficient") && ret.size() >= 2) {
 				if (tok == specular_coefficient_TOK && iis >= 2) {
-				const float x = atof(ret[1]);
+				const float x = ATOF(ret[1]);
 				specular_coefficient = x;
 			}
 
@@ -383,7 +605,8 @@ public:
 		std::cout<<"use_memfile="<<use_memfile<<std::endl;
 		*/
 
-
+prepareMy();
+prepareVariant2();
 	
 		FileManager manager;
 		if (!manager.load(filename))
@@ -645,9 +868,9 @@ public:
 				case V_TOK:
 					//} else if (ret[0] == "v" && 
 					if(iis >= 4) {
-						const float x = atof(ret[1]);
-						const float y = atof(ret[2]);
-						const float z = atof(ret[3]);
+						const float x = ATOF(ret[1]);
+						const float y = ATOF(ret[2]);
+						const float z = ATOF(ret[3]);
 						
 						//только для hairball - умножить на 2.9 и по у -0.01 
 						//mesh_body.v.push_back(Float3(x*2.9f, y*2.9f-0.01f, z*2.9f));
@@ -659,9 +882,9 @@ public:
 				case VN_TOK:
 					//else if (ret[0] == "vn" && 
 					if(iis >= 4) {
-						const float x = atof(ret[1]);
-						const float y = atof(ret[2]);
-						const float z = atof(ret[3]);
+						const float x = ATOF(ret[1]);
+						const float y = ATOF(ret[2]);
+						const float z = ATOF(ret[3]);
 						mesh_body.vn.push_back(Float3(x, y, z));
 					} 
 					else tok = TOK_ERR_PARAMS;
@@ -670,9 +893,9 @@ public:
 				case VT_TOK:
 					//else if (ret[0] == "vt" && ret.size() >= 4) {
 					if(iis >= 4) {
-						const float x = atof(ret[1]);
-						const float y = atof(ret[2]);
-						const float z = atof(ret[3]);
+						const float x = ATOF(ret[1]);
+						const float y = ATOF(ret[2]);
+						const float z = ATOF(ret[3]);
 						mesh_body.vt.push_back(Float3(x, y, z));
 					} 
 					else tok = TOK_ERR_PARAMS;
